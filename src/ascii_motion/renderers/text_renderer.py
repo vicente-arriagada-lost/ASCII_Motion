@@ -18,6 +18,9 @@ def render_to_terminal(ascii_art: str) -> None:
 
 def save_to_file(ascii_art: str, output_path: str | Path) -> Path:
     """Save ASCII art to a UTF-8 text file."""
+    if not isinstance(ascii_art, str):
+        raise TypeError("ASCII art must be a string")
+
     path = Path(output_path).expanduser()
 
     if path.suffix.lower() != ".txt":
@@ -32,17 +35,34 @@ def save_to_file(ascii_art: str, output_path: str | Path) -> Path:
     return path
 
 
+def _validate_frames(frames: Sequence[Frame]) -> None:
+    """Validate an animation's frame sequence."""
+    if isinstance(frames, (str, bytes)) or not isinstance(frames, Sequence):
+        raise TypeError("Frames must be a sequence of Frame objects")
+
+    if not frames:
+        raise ValueError("Animation must contain at least one frame")
+
+    if any(not isinstance(frame, Frame) for frame in frames):
+        raise TypeError("All animation frames must be Frame instances")
+
+
 def render_animation(
     frames: Sequence[Frame],
     loops: int = 1,
     clear_screen: bool = True,
 ) -> None:
     """Play ASCII animation frames in the terminal."""
-    if not frames:
-        raise ValueError("Animation must contain at least one frame")
+    _validate_frames(frames)
+
+    if not isinstance(loops, int) or isinstance(loops, bool):
+        raise TypeError("Loops must be an integer")
 
     if loops < 0:
         raise ValueError("Loops cannot be negative")
+
+    if not isinstance(clear_screen, bool):
+        raise TypeError("clear_screen must be a boolean")
 
     if loops == 0:
         while True:
@@ -69,8 +89,7 @@ def save_animation(
     output_path: str | Path,
 ) -> Path:
     """Save ASCII animation frames and durations to a JSON text file."""
-    if not frames:
-        raise ValueError("Animation must contain at least one frame")
+    _validate_frames(frames)
 
     if len(frames) > MAX_ANIMATION_FRAMES:
         raise ValueError(
@@ -168,11 +187,6 @@ def load_animation_file(input_path: str | Path) -> list[Frame]:
         ):
             raise ValueError(f"Frame {index} duration must be a non-negative integer")
 
-        frames.append(
-            Frame(
-                content=content,
-                duration_ms=duration_ms,
-            )
-        )
+        frames.append(Frame(content=content, duration_ms=duration_ms))
 
     return frames

@@ -6,6 +6,7 @@ from ascii_motion.models.frame import Frame
 from ascii_motion.renderers.text_renderer import (
     render_animation,
     save_animation,
+    save_to_file,
 )
 
 
@@ -97,3 +98,40 @@ def test_save_animation_rejects_wrong_extension(tmp_path):
 
     with pytest.raises(ValueError, match=r"\.txt"):
         save_animation(frames, tmp_path / "animation.json")
+
+
+@pytest.mark.parametrize("loops", [True, False, 1.5, "2", None])
+def test_render_animation_rejects_invalid_loop_types(loops):
+    frames = [Frame(content="ABC", duration_ms=0)]
+
+    with pytest.raises(TypeError, match="Loops must be an integer"):
+        render_animation(frames, loops=loops, clear_screen=False)
+
+
+@pytest.mark.parametrize("clear_screen", [1, "yes", None])
+def test_render_animation_rejects_invalid_clear_screen(clear_screen):
+    frames = [Frame(content="ABC", duration_ms=0)]
+
+    with pytest.raises(TypeError, match="clear_screen must be a boolean"):
+        render_animation(frames, clear_screen=clear_screen)
+
+
+@pytest.mark.parametrize("frames", ["ABC", b"ABC", None, 123])
+def test_render_animation_rejects_invalid_frame_sequences(frames):
+    with pytest.raises(TypeError, match="sequence of Frame objects"):
+        render_animation(frames, clear_screen=False)
+
+
+def test_render_animation_rejects_non_frame_items():
+    with pytest.raises(TypeError, match="Frame instances"):
+        render_animation(["not a frame"], clear_screen=False)
+
+
+def test_save_animation_rejects_non_frame_items(tmp_path):
+    with pytest.raises(TypeError, match="Frame instances"):
+        save_animation(["not a frame"], tmp_path / "animation.txt")
+
+
+def test_save_to_file_rejects_non_string_content(tmp_path):
+    with pytest.raises(TypeError, match="ASCII art must be a string"):
+        save_to_file(123, tmp_path / "output.txt")
