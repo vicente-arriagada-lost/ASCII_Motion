@@ -49,3 +49,11 @@ def test_resize_rejects_invalid_aspect_ratio(ratio):
         match="Character aspect ratio must be greater than zero",
     ):
         resize_image(image, character_aspect_ratio=ratio)
+
+
+@pytest.mark.parametrize("width", [0, -1, 1.5, True])
+def test_resize_image_rejects_invalid_width(width):
+    image = Image.new("RGB", (10, 10), "black")
+
+    with pytest.raises(ValueError, match="Width must be greater than zero"):
+        resize_image(image, width=width)

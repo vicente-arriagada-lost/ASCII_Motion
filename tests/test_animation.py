@@ -62,3 +62,31 @@ def test_load_animation_enforces_frame_limit(tmp_path):
 
     with pytest.raises(AnimationLoadError, match="limit is 1"):
         load_animation(path, max_frames=1)
+
+
+@pytest.mark.parametrize("max_frames", [0, -1, 1.5, True])
+def test_load_animation_rejects_invalid_frame_limit(
+    tmp_path,
+    max_frames,
+):
+    path = tmp_path / "animated.gif"
+    create_test_gif(path)
+
+    with pytest.raises(ValueError, match="positive integer"):
+        load_animation(path, max_frames=max_frames)
+
+
+def test_load_animation_rejects_oversized_frame(tmp_path):
+    path = tmp_path / "animated.gif"
+    create_test_gif(path)
+
+    with pytest.raises(AnimationLoadError, match="pixel limit"):
+        load_animation(path, max_pixels=100)
+
+
+def test_load_animation_rejects_invalid_pixel_limit(tmp_path):
+    path = tmp_path / "animated.gif"
+    create_test_gif(path)
+
+    with pytest.raises(ValueError, match="positive integer"):
+        load_animation(path, max_pixels=True)

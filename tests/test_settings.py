@@ -70,3 +70,9 @@ def test_converter_uses_conversion_settings():
     lines = result.splitlines()
     assert len(lines) == 10
     assert all(len(line) == 20 for line in lines)
+
+
+@pytest.mark.parametrize("width", [0, -1, 1.5, True])
+def test_conversion_settings_rejects_invalid_width(width):
+    with pytest.raises(ValueError, match="Width must be greater than zero"):
+        ConversionSettings(width=width)

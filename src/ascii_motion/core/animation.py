@@ -7,6 +7,8 @@ from ascii_motion.exceptions import AnimationLoadError
 from ascii_motion.models.frame import Frame
 from ascii_motion.models.settings import ConversionSettings
 
+DEFAULT_MAX_PIXELS = 20_000_000
+
 
 def load_animation(
     path: str | Path,
@@ -21,8 +23,23 @@ def load_animation(
     max_frames: int = 500,
     *,
     settings: ConversionSettings | None = None,
+    max_pixels: int = DEFAULT_MAX_PIXELS,
 ) -> list[Frame]:
     """Load a GIF and convert its frames to ASCII."""
+    if (
+        not isinstance(max_frames, int)
+        or isinstance(max_frames, bool)
+        or max_frames < 1
+    ):
+        raise ValueError("Maximum frame count must be a positive integer")
+
+    if (
+        not isinstance(max_pixels, int)
+        or isinstance(max_pixels, bool)
+        or max_pixels < 1
+    ):
+        raise ValueError("Maximum pixel count must be a positive integer")
+
     animation_path = Path(path).expanduser()
 
     if not animation_path.exists():
@@ -30,9 +47,6 @@ def load_animation(
 
     if not animation_path.is_file():
         raise AnimationLoadError(f"Path is not a file: {animation_path}")
-
-    if max_frames < 1:
-        raise ValueError("Maximum frame count must be greater than zero")
 
     if settings is None:
         settings = ConversionSettings(
@@ -62,14 +76,22 @@ def load_animation(
 
             for index in range(image.n_frames):
                 image.seek(index)
-                frame_image = image.convert("RGB")
 
+                width_px, height_px = image.size
+
+                if width_px * height_px > max_pixels:
+                    raise AnimationLoadError(
+                        f"Frame {index} exceeds pixel limit of {max_pixels}"
+                    )
+
+                frame_image = image.convert("RGB")
                 ascii_art = convert_to_ascii(
                     frame_image,
                     settings=settings,
                 )
 
                 duration_ms = image.info.get("duration", 100)
+
                 if not isinstance(duration_ms, (int, float)):
                     duration_ms = 100
 

@@ -7,7 +7,7 @@ def resize_image(
     character_aspect_ratio: float = 0.5,
 ) -> Image.Image:
     """Resize an image considering terminal character proportions."""
-    if width < 1:
+    if not isinstance(width, int) or isinstance(width, bool) or width < 1:
         raise ValueError("Width must be greater than zero")
 
     if character_aspect_ratio <= 0:

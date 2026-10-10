@@ -48,3 +48,20 @@ def test_load_gif_returns_first_frame(tmp_path):
 
     assert result.size == (10, 10)
     assert result.getpixel((0, 0)) == (255, 0, 0)
+
+
+def test_load_image_rejects_oversized_image(tmp_path):
+    path = tmp_path / "large.png"
+    Image.new("RGB", (20, 10), "black").save(path)
+
+    with pytest.raises(ImageLoadError, match="pixel limit"):
+        load_image(path, max_pixels=100)
+
+
+@pytest.mark.parametrize("max_pixels", [0, -1, 1.5, True])
+def test_load_image_rejects_invalid_pixel_limit(tmp_path, max_pixels):
+    path = tmp_path / "test.png"
+    Image.new("RGB", (10, 10), "black").save(path)
+
+    with pytest.raises(ValueError, match="positive integer"):
+        load_image(path, max_pixels=max_pixels)

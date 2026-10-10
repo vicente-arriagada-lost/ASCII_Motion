@@ -15,10 +15,14 @@ class ConversionSettings:
     normalize_contrast: bool = False
 
     def __post_init__(self) -> None:
-        if self.width < 1:
+        if (
+            not isinstance(self.width, int)
+            or isinstance(self.width, bool)
+            or self.width < 1
+        ):
             raise ValueError("Width must be greater than zero")
 
-        if not self.charset:
+        if not isinstance(self.charset, str) or not self.charset:
             raise ValueError("Charset cannot be empty")
 
         if self.contrast < 0:
