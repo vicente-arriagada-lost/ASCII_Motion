@@ -206,4 +206,8 @@ La conversión de vídeo no forma parte del alcance actual. El proyecto no depen
 
 ## Licencia
 
-La licencia del proyecto se definirá antes de su distribución pública.
+ASCII Motion se distribuye bajo la **GNU General Public License, versión 3.0 únicamente (`GPL-3.0-only`)**. Consulta el archivo [`LICENSE`](LICENSE) para leer el texto completo.
+
+La GPL permite utilizar, modificar, redistribuir y comercializar el software. Al distribuir versiones modificadas cubiertas por esta licencia, deben respetarse sus condiciones, incluidos los requisitos aplicables de licencia y código fuente.
+
+Las dependencias de terceros pueden tener licencias independientes. Conserva sus avisos y revisa sus condiciones al redistribuir el programa.

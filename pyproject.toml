@@ -1,10 +1,11 @@
 [build-system]
-requires = ["setuptools>=75"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "ascii-motion"
 version = "0.1.0"
+license = "GPL-3.0-only"
 description = "A desktop-oriented ASCII art engine for images and animated GIFs"
 requires-python = ">=3.12"
 dependencies = [
@@ -13,6 +14,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+api = [
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "python-multipart>=0.0.20",
+]
+desktop = [
+    "pyinstaller>=6.22",
+]
+
 dev = [
 "pytest>=8.0",
 "ruff>=0.9",

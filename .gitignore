@@ -10,3 +10,13 @@ build/
 .env
 .idea/
 .vscode/
+/.build-tools/
+/release/
+__pycache__/
+/build/
+/dist/
+/ascii-motion-api.spec
+/frontend/node_modules/
+/frontend/dist/
+/frontend/src-tauri/target/
+/frontend/src-tauri/binaries/
