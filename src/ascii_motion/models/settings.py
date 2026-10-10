@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 
 
@@ -25,14 +26,43 @@ class ConversionSettings:
         if not isinstance(self.charset, str) or not self.charset:
             raise ValueError("Charset cannot be empty")
 
-        if self.contrast < 0:
-            raise ValueError("Contrast cannot be negative")
+        self._validate_number("contrast", self.contrast, minimum=0)
+        self._validate_number("brightness", self.brightness, minimum=0)
+        self._validate_number(
+            "character_aspect_ratio",
+            self.character_aspect_ratio,
+            minimum=0,
+            exclusive=True,
+        )
+        self._validate_number("gamma", self.gamma, minimum=0, exclusive=True)
 
-        if self.brightness < 0:
-            raise ValueError("Brightness cannot be negative")
+        if not isinstance(self.invert, bool):
+            raise ValueError("Invert must be a boolean")
 
-        if self.character_aspect_ratio <= 0:
-            raise ValueError("Character aspect ratio must be greater than zero")
+        if not isinstance(self.normalize_contrast, bool):
+            raise ValueError("Normalize contrast must be a boolean")
 
-        if self.gamma <= 0:
-            raise ValueError("Gamma must be greater than zero")
+    @staticmethod
+    def _validate_number(
+        name: str,
+        value: object,
+        *,
+        minimum: float,
+        exclusive: bool = False,
+    ) -> None:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
+            raise ValueError(
+                f"{name.replace('_', ' ').capitalize()} must be a finite number"
+            )
+
+        is_below_minimum = value <= minimum if exclusive else value < minimum
+        if is_below_minimum:
+            if name == "character_aspect_ratio":
+                raise ValueError("Character aspect ratio must be greater than zero")
+            if name == "gamma":
+                raise ValueError("Gamma must be greater than zero")
+            raise ValueError(f"{name.capitalize()} cannot be negative")

@@ -76,3 +76,63 @@ def test_converter_uses_conversion_settings():
 def test_conversion_settings_rejects_invalid_width(width):
     with pytest.raises(ValueError, match="Width must be greater than zero"):
         ConversionSettings(width=width)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("contrast", True),
+        ("contrast", "1.0"),
+        ("contrast", float("nan")),
+        ("contrast", float("inf")),
+        ("brightness", False),
+        ("brightness", "1.0"),
+        ("brightness", float("nan")),
+        ("character_aspect_ratio", True),
+        ("character_aspect_ratio", "0.5"),
+        ("character_aspect_ratio", float("inf")),
+        ("gamma", False),
+        ("gamma", "1.0"),
+        ("gamma", float("nan")),
+    ],
+)
+def test_numeric_settings_reject_invalid_types_and_non_finite_values(field, value):
+    with pytest.raises(ValueError):
+        ConversionSettings(**{field: value})
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("invert", 1, "Invert must be a boolean"),
+        ("invert", "yes", "Invert must be a boolean"),
+        (
+            "normalize_contrast",
+            1,
+            "Normalize contrast must be a boolean",
+        ),
+        (
+            "normalize_contrast",
+            "yes",
+            "Normalize contrast must be a boolean",
+        ),
+    ],
+)
+def test_boolean_settings_reject_non_boolean_values(field, value, message):
+    with pytest.raises(ValueError, match=message):
+        ConversionSettings(**{field: value})
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("contrast", 0),
+        ("brightness", 0),
+        ("character_aspect_ratio", 0.5),
+        ("gamma", 1.0),
+    ],
+)
+def test_numeric_settings_accept_valid_boundary_values(field, value):
+    settings = ConversionSettings(**{field: value})
+
+    assert getattr(settings, field) == value
