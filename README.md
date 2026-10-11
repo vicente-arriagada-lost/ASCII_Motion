@@ -211,3 +211,43 @@ ASCII Motion se distribuye bajo la **GNU General Public License, versión 3.0 ú
 La GPL permite utilizar, modificar, redistribuir y comercializar el software. Al distribuir versiones modificadas cubiertas por esta licencia, deben respetarse sus condiciones, incluidos los requisitos aplicables de licencia y código fuente.
 
 Las dependencias de terceros pueden tener licencias independientes. Conserva sus avisos y revisa sus condiciones al redistribuir el programa.
+
+
+## Capturas de pantalla
+
+> **Cómo añadir imágenes:** guarda tus capturas en `docs/images/` y sustituye
+> cada marcador por una imagen Markdown, por ejemplo:
+> `![Inicio del programa](docs/images/inicio-programa.png)`.
+
+---- [imagen inicio programa] ----
+
+---- [imagen pantalla importar archivo] ----
+
+---- [imagen editor principal] ----
+
+---- [imagen conversion arte ascii] ----
+
+---- [imagen controles dimensiones y caracteres] ----
+
+---- [imagen selector de colores] ----
+
+---- [imagen previsualizacion de GIF animado] ----
+
+---- [imagen controles de reproduccion GIF] ----
+
+---- [imagen menu exportar ASCII] ----
+
+---- [imagen exportacion GIF y JSON] ----
+
+---- [imagen importacion de proyecto] ----
+
+---- [imagen arte ASCII animado en Fastfetch] ----
+
+---- [imagen ASCII Motion instalado en el escritorio] ----
+
+## Instalación desde el código fuente
+
+El instalador para Linux está en `scripts/install-linux.sh`.
+Actualmente prepara una instalación local para el usuario y compila
+la aplicación en el equipo donde se ejecuta. La compatibilidad debe
+validarse en cada distribución antes de publicar paquetes definitivos.
