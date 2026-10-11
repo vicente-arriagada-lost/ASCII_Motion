@@ -1,4 +1,5 @@
 import { getApiUrl } from './api.js';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { useEffect, useRef, useState } from 'react';
 import './App.css';
 
@@ -94,6 +95,8 @@ function App() {
   const [backgroundColor, setBackgroundColor] = useState('#0c0c11');
   const [activeWheelTarget, setActiveWheelTarget] = useState('text');
   const [ascii, setAscii] = useState('');
+  const [sourceAscii, setSourceAscii] = useState('');
+  const [isTextProject, setIsTextProject] = useState(false);
   const [animationFrames, setAnimationFrames] = useState([]);
   const [currentFrameIndex, setCurrentFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -104,6 +107,9 @@ function App() {
   const [asciiFontSize, setAsciiFontSize] = useState(10);
 
   const isGifFile = Boolean(file && /\.gif$/i.test(file.name));
+  const isTextArt = Boolean(file && /\.txt$/i.test(file.name));
+  const isTextComparison = isTextArt && isTextProject;
+  const isSingleTextImport = isTextArt && !isTextProject;
   const currentAnimationFrame = animationFrames[currentFrameIndex];
   const displayedAscii = isGifFile
     ? (currentAnimationFrame?.content ?? '')
@@ -171,6 +177,8 @@ function App() {
     setCurrentFrameIndex(0);
     setIsPlaying(false);
     setAscii('');
+    setSourceAscii('');
+    setIsTextProject(false);
     setNotice('');
     hasConvertedRef.current = false;
     sourceDimensionsRef.current = { width: 0, height: 0 };
@@ -214,6 +222,8 @@ function App() {
 
     updatePreview(selectedFile);
     setFile(selectedFile);
+    setSourceAscii('');
+    setIsTextProject(false);
     setAnimationFrames([]);
     setCurrentFrameIndex(0);
     setIsPlaying(false);
@@ -224,6 +234,10 @@ function App() {
 
   async function convertImage({ live = false } = {}) {
     if (!file) return;
+    if (/\.txt$/i.test(file.name)) {
+      setNotice('Este archivo ya contiene arte ASCII. Edita sus caracteres en el panel de texto.');
+      return;
+    }
 
     const isGif = /\.gif$/i.test(file.name);
 
@@ -320,7 +334,7 @@ function App() {
 
   // Los cambios de ajustes vuelven a convertir el archivo seleccionado.
   useEffect(() => {
-    if (!hasConvertedRef.current || !file) return undefined;
+    if (!hasConvertedRef.current || !file || /\.txt$/i.test(file.name)) return undefined;
 
     const timer = window.setTimeout(() => {
       convertImageRef.current?.({ live: true });
@@ -434,6 +448,77 @@ function App() {
     window.setTimeout(() => URL.revokeObjectURL(url), 1500);
   }
 
+  function bytesToBase64(bytes) {
+    const chunks = [];
+    const chunkSize = 0x8000;
+
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      chunks.push(
+        String.fromCharCode(...bytes.subarray(offset, offset + chunkSize)),
+      );
+    }
+
+    return btoa(chunks.join(''));
+  }
+
+  async function saveExportFile({
+    content,
+    filename,
+    mimeType,
+    companionContent = null,
+    companionFilename = null,
+    companionSuffix = null,
+  }) {
+    // En navegador se conserva la descarga web. En Tauri se usa un selector
+    // nativo y Rust confirma la escritura real antes de informar éxito.
+    if (!isTauri()) {
+      if (content instanceof Blob) downloadBlobFile(content, filename);
+      else downloadTextFile(content, filename, mimeType);
+
+      if (companionContent !== null && companionFilename) {
+        downloadTextFile(
+          companionContent,
+          companionFilename,
+          'application/json;charset=utf-8',
+        );
+      }
+
+      return { saved: true, browser: true, path: null };
+    }
+
+    const contentBytes = content instanceof Blob
+      ? new Uint8Array(await content.arrayBuffer())
+      : new TextEncoder().encode(content);
+    const companionBytes = companionContent === null
+      ? null
+      : new TextEncoder().encode(companionContent);
+    const extension = filename.includes('.')
+      ? filename.split('.').pop().toLowerCase()
+      : '';
+
+    let path;
+    try {
+      path = await invoke('save_export_file', {
+        suggestedName: filename,
+        extension,
+        contentBase64: bytesToBase64(contentBytes),
+        companionBase64: companionBytes === null
+          ? null
+          : bytesToBase64(companionBytes),
+        companionSuffix,
+      });
+    } catch (error) {
+      throw new Error(
+        typeof error === 'string'
+          ? error
+          : error?.message || 'No se pudo guardar el archivo seleccionado.',
+      );
+    }
+
+    if (!path) return { saved: false, canceled: true, browser: false, path: null };
+    return { saved: true, browser: false, path };
+  }
+
   function getExportBaseName() {
     const original = file?.name || 'ascii-motion';
     const base = original
@@ -456,7 +541,7 @@ function App() {
     }
   }
 
-  function exportAscii(format) {
+  async function exportAscii(format) {
     if (!displayedAscii) {
       setNotice('Primero convierte una imagen o un GIF.');
       setExportModalOpen(false);
@@ -484,6 +569,7 @@ function App() {
           version: 1,
           exportedAt: new Date().toISOString(),
           sourceFile: file?.name ?? null,
+          sourceAscii: isTextArt ? sourceAscii : undefined,
           settings: {
             width,
             height,
@@ -494,6 +580,7 @@ function App() {
             brightness,
             textColor: asciiColor,
             backgroundColor,
+            asciiFontSize,
           },
           content,
           animation: isGifFile
@@ -546,9 +633,18 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
         throw new Error('Formato de exportación no reconocido.');
       }
 
-      downloadTextFile(payload, filename, mimeType);
+      const result = await saveExportFile({ content: payload, filename, mimeType });
+      if (!result.saved) {
+        setNotice('Exportación cancelada. No se guardó ningún archivo.');
+        return;
+      }
+
       setExportModalOpen(false);
-      setNotice(`Arte ASCII exportado como ${filename}.`);
+      setNotice(
+        result.browser
+          ? `Descarga iniciada: ${filename}.`
+          : `Archivo guardado correctamente en: ${result.path}`,
+      );
     } catch (error) {
       setNotice(error.message || 'No se pudo exportar el arte ASCII.');
     }
@@ -573,6 +669,33 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
   async function buildProjectPayload() {
     if (!file) {
       throw new Error('No hay un archivo seleccionado para guardar.');
+    }
+
+    if (isTextArt) {
+      return {
+        format: 'ASCII Motion Text Project',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        sourceName: file.name,
+        sourceAscii,
+        settings: {
+          width,
+          height,
+          charset,
+          customCharset,
+          gamma,
+          contrast,
+          brightness,
+          asciiColor,
+          backgroundColor,
+          asciiFontSize,
+        },
+        output: {
+          ascii,
+          frames: [],
+          currentFrameIndex: 0,
+        },
+      };
     }
 
     const dataUrl = await readFileAsDataUrl(file);
@@ -612,13 +735,21 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
       const project = await buildProjectPayload();
       const filename = `${getExportBaseName()}.asciimotion.json`;
 
-      downloadTextFile(
-        JSON.stringify(project, null, 2),
+      const result = await saveExportFile({
+        content: JSON.stringify(project, null, 2),
         filename,
-        'application/json;charset=utf-8',
-      );
+        mimeType: 'application/json;charset=utf-8',
+      });
+      if (!result.saved) {
+        setNotice('Exportación cancelada. No se guardó ningún archivo.');
+        return;
+      }
 
-      setNotice(`Proyecto exportado como ${filename}.`);
+      setNotice(
+        result.browser
+          ? `Descarga iniciada: ${filename}.`
+          : `Proyecto guardado correctamente en: ${result.path}`, 
+      );
     } catch (error) {
       setNotice(error.message || 'No se pudo exportar el proyecto.');
     }
@@ -669,24 +800,114 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
       }
 
       const baseName = getExportBaseName();
-      downloadBlobFile(gifBlob, `${baseName}.gif`);
+      const result = await saveExportFile({
+        content: gifBlob,
+        filename: `${baseName}.gif`,
+        mimeType: 'image/gif',
+        companionContent: JSON.stringify(project, null, 2),
+        companionFilename: `${baseName}.asciimotion.json`,
+        companionSuffix: '.asciimotion.json',
+      });
 
-      // También se descarga la copia nativa: no dependemos de que otro
-      // editor respete los metadatos que lleva incrustados el GIF.
-      downloadTextFile(
-        JSON.stringify(project, null, 2),
-        `${baseName}.asciimotion.json`,
-        'application/json;charset=utf-8',
-      );
+      if (!result.saved) {
+        setNotice('Exportación cancelada. No se guardó ningún archivo.');
+        return;
+      }
 
       setExportModalOpen(false);
       setNotice(
-        `Se exportaron ${baseName}.gif y ${baseName}.asciimotion.json.`,
+        result.browser
+          ? `Descargas iniciadas: ${baseName}.gif y ${baseName}.asciimotion.json.`
+          : `GIF y proyecto editable guardados en la carpeta seleccionada. GIF: ${result.path}`,
       );
     } catch (error) {
       setNotice(error.message || 'No se pudo exportar la animación.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  function restoreTextArt(content, sourceName, settings = {}, projectOptions = {}) {
+    if (typeof content !== 'string') {
+      throw new Error('El archivo no contiene texto ASCII válido.');
+    }
+
+    // Se normalizan los saltos de línea, pero jamás se aplica trim(): la
+    // indentación y los espacios a la derecha forman parte del dibujo.
+    const preservedContent = content.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+    if (!preservedContent.length) {
+      throw new Error('El archivo de texto está vacío.');
+    }
+
+    const safeSourceName = typeof sourceName === 'string'
+      ? sourceName.split(/[\\/]/).pop() || 'ascii-art'
+      : 'ascii-art';
+    const restoredName = /\.txt$/i.test(safeSourceName)
+      ? safeSourceName
+      : `${safeSourceName.replace(/(?:\.asciimotion)?\.json$/i, '').replace(/\.[^.]+$/, '') || 'ascii-art'}.txt`;
+    const restoredFile = new File([preservedContent], restoredName, {
+      type: 'text/plain;charset=utf-8',
+    });
+    const originalContent = typeof projectOptions.sourceAscii === 'string'
+      ? projectOptions.sourceAscii.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n')
+      : preservedContent;
+
+    if (restoredFile.size > 10 * 1024 * 1024) {
+      throw new Error('El arte ASCII supera el límite de 10 MB.');
+    }
+
+    const boundedNumber = (value, fallback, min, max) => {
+      const number = Number(value);
+      return Number.isFinite(number)
+        ? Math.min(max, Math.max(min, number))
+        : fallback;
+    };
+    const validColor = (value, fallback) =>
+      typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)
+        ? value
+        : fallback;
+    const validModes = ['standard', 'blocks', 'dense', 'simple', 'custom'];
+
+    cancelPendingConversion();
+    clearPreview();
+    setFile(restoredFile);
+    setSourceAscii(originalContent);
+    setIsTextProject(projectOptions.isProject === true);
+    setAnimationFrames([]);
+    setCurrentFrameIndex(0);
+    setIsPlaying(false);
+    setAscii(preservedContent);
+    setWidth(Math.round(boundedNumber(settings.width, 80, 10, 300)));
+    setHeight(Math.round(boundedNumber(settings.height, 40, 1, 300)));
+    heightTouchedRef.current = true;
+    sourceDimensionsRef.current = { width: 0, height: 0 };
+    setCharset(validModes.includes(settings.charset) ? settings.charset : 'standard');
+    setCustomCharset(
+      typeof settings.customCharset === 'string' && settings.customCharset.length > 0
+        ? settings.customCharset.slice(0, 128)
+        : '@%#*+=-:. ',
+    );
+    setGamma(boundedNumber(settings.gamma, 1, 0.1, 3));
+    setContrast(boundedNumber(settings.contrast, 1, 0.1, 3));
+    setBrightness(boundedNumber(settings.brightness, 1, 0.1, 3));
+    setAsciiColor(validColor(settings.asciiColor ?? settings.textColor, '#d0baff'));
+    setBackgroundColor(validColor(settings.backgroundColor, '#0c0c11'));
+    setAsciiFontSize(boundedNumber(settings.asciiFontSize, 10, 1, 24));
+    hasConvertedRef.current = true;
+    setExportModalOpen(false);
+    setNotice('Arte ASCII importado. Puedes editar los caracteres y los colores en el espacio de trabajo.');
+    setView('workspace');
+  }
+
+  async function importPlainTextFile(textFile) {
+    try {
+      if (textFile.size > 10 * 1024 * 1024) {
+        throw new Error('El arte ASCII supera el límite de 10 MB.');
+      }
+      const content = await textFile.text();
+      restoreTextArt(content, textFile.name);
+    } catch (error) {
+      setNotice(error.message || 'No se pudo importar el archivo de texto.');
     }
   }
 
@@ -699,6 +920,53 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
       }
 
       const project = JSON.parse(await projectFile.text());
+
+      if (
+        project?.format === 'ASCII Motion Text Project' &&
+        project?.version === 1 &&
+        typeof project?.output?.ascii === 'string'
+      ) {
+        restoreTextArt(
+          project.output.ascii,
+          project.sourceName || projectFile.name,
+          project.settings || {},
+          {
+            sourceAscii: typeof project.sourceAscii === 'string'
+              ? project.sourceAscii
+              : project.output.ascii,
+            isProject: true,
+          },
+        );
+        return;
+      }
+
+      if (
+        project?.format === 'ASCII Motion Export' &&
+        project?.version === 1 &&
+        typeof project?.content === 'string'
+      ) {
+        restoreTextArt(
+          project.content,
+          project.sourceFile || projectFile.name,
+          {
+            ...project.settings,
+            charset: project.settings?.charset ?? project.settings?.charsetMode,
+            customCharset: project.settings?.customCharset ?? (
+              project.settings?.charsetMode === 'custom'
+                ? project.settings?.characters
+                : undefined
+            ),
+            asciiColor: project.settings?.textColor ?? project.settings?.asciiColor,
+          },
+          {
+            sourceAscii: typeof project.sourceAscii === 'string'
+              ? project.sourceAscii
+              : project.content,
+            isProject: true,
+          },
+        );
+        return;
+      }
 
       if (
         project?.format !== 'ASCII Motion Project' ||
@@ -810,6 +1078,8 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
       previewUrlRef.current = imageUrl;
       setPreviewUrl(imageUrl);
       setFile(restoredFile);
+      setSourceAscii('');
+      setIsTextProject(false);
 
       setWidth(Math.round(boundedNumber(settings.width, 80, 10, 300)));
       setHeight(Math.round(boundedNumber(settings.height, 40, 1, 300)));
@@ -857,6 +1127,11 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
 
   async function importProjectOrGif(selectedFile) {
     if (!selectedFile) return;
+
+    if (/\.txt$/i.test(selectedFile.name)) {
+      await importPlainTextFile(selectedFile);
+      return;
+    }
 
     if (!/\.gif$/i.test(selectedFile.name)) {
       await importProjectFile(selectedFile);
@@ -1161,6 +1436,8 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
                 cancelPendingConversion();
                 clearPreview();
                 setFile(null);
+                setSourceAscii('');
+                setIsTextProject(false);
     setAnimationFrames([]);
     setCurrentFrameIndex(0);
     setIsPlaying(false);
@@ -1194,14 +1471,20 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
             </span>
           </div>
 
-          <div className="preview-grid">
-            <article className="preview-panel">
-              <div className="panel-header">
-                <span>01 / ORIGINAL</span>
-                <span>ARCHIVO DE ENTRADA</span>
-              </div>
+          <div className={`preview-grid ${isTextComparison ? 'preview-grid-text-project' : isSingleTextImport ? 'preview-grid-text-single' : ''}`}>
+            {(!isTextArt || isTextComparison) && (
+              <article className="preview-panel">
+                <div className="panel-header">
+                  <span>{isTextComparison ? '01 / ASCII ORIGINAL' : '01 / ORIGINAL'}</span>
+                  <span>{isTextComparison ? 'ARTE ASCII DE ENTRADA' : 'ARCHIVO DE ENTRADA'}</span>
+                </div>
 
-              <div className="image-preview">
+                {isTextComparison ? (
+                  <div className="ascii-placeholder source-ascii-placeholder" style={{ backgroundColor: '#0c0c11' }}>
+                    <pre className="ascii-result" style={{ color: '#d0baff', backgroundColor: '#0c0c11', fontSize: `${asciiFontSize}px`, lineHeight: 1.1 }}>{sourceAscii}</pre>
+                  </div>
+                ) : (
+                  <div className="image-preview">
                 <svg className="image-filter-defs" aria-hidden="true">
                   <defs>
                     <filter
@@ -1289,25 +1572,36 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
                     }}
                   />
                 )}
-              </div>
+                {isTextArt && (
+                  <div className="text-source-note">
+                    <strong>Arte ASCII importado</strong>
+                    <p>El archivo contiene texto plano. Puedes editar sus caracteres en el panel inferior.</p>
+                  </div>
+                )}
+                  </div>
+                )}
 
-              <div className="panel-footer">{file.name}</div>
+                <div className="panel-footer">{isTextComparison ? 'Arte ASCII original' : file.name}</div>
 
-              <div className="preview-reset-actions">
-                <button className="secondary-button" onClick={resetTone}>
-                  Restablecer tonos
-                </button>
-                <button className="secondary-button" onClick={resetDimensions}>
-                  Restablecer dimensiones
-                </button>
-              </div>
-            </article>
+                {!isTextArt && (
+                  <div className="preview-reset-actions">
+                    <button className="secondary-button" onClick={resetTone}>
+                      Restablecer tonos
+                    </button>
+                    <button className="secondary-button" onClick={resetDimensions}>
+                      Restablecer dimensiones
+                    </button>
+                  </div>
+                )}
+              </article>
+            )}
 
-            <div className="ascii-preview-column">
+            <div className={`ascii-preview-column ${isSingleTextImport ? 'ascii-preview-column-single' : ''}`}>
               <article className="preview-panel ascii-preview-panel">
                 <div className="panel-header ascii-panel-header">
-                  <span>02 / ASCII</span>
-                  <label className="inline-format-field" htmlFor="ascii-charset">
+                  <span>{isTextComparison ? '02 / ASCII EDITADO' : isTextArt ? '01 / ARTE ASCII' : '02 / ASCII'}</span>
+                  {!isTextArt && (
+                    <label className="inline-format-field" htmlFor="ascii-charset">
                     <span className="visually-hidden">Formato ASCII</span>
                     <select
                       id="ascii-charset"
@@ -1321,7 +1615,8 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
                       <option value="simple">Simple</option>
                       <option value="custom">Custom</option>
                     </select>
-                  </label>
+                    </label>
+                  )}
                 </div>
 
                 <div
@@ -1378,12 +1673,34 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
                   {loading
                     ? 'Actualizando vista previa…'
                     : displayedAscii
-                      ? isGifFile
-                        ? `Fotograma ${currentFrameIndex + 1} de ${animationFrames.length}`
-                        : 'Conversión completada'
+                      ? isTextArt
+                        ? 'Arte ASCII importado y editable'
+                        : isGifFile
+                          ? `Fotograma ${currentFrameIndex + 1} de ${animationFrames.length}`
+                          : 'Conversión completada'
                       : 'Esperando conversión'}
                 </div>
               </article>
+              {isTextArt && (
+                <section className="ascii-edit-panel" aria-label="Editar arte ASCII">
+                  <div className="ascii-edit-heading">
+                    <strong>Editar arte ASCII</strong>
+                    <span>{ascii.length.toLocaleString()} caracteres</span>
+                  </div>
+                  <textarea
+                    className="ascii-edit-textarea"
+                    aria-label="Contenido editable del arte ASCII"
+                    value={ascii}
+                    spellCheck={false}
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    wrap="off"
+                    style={{ color: asciiColor, backgroundColor, fontSize: `${asciiFontSize}px` }}
+                    onChange={(event) => setAscii(event.target.value)}
+                  />
+                  <p>Los espacios y saltos de línea forman parte del dibujo. No los elimines si quieres conservar su forma.</p>
+                </section>
+              )}
             </div>
           </div>
 
@@ -1449,13 +1766,14 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
             <div className="settings-heading">
               <div>
                 <span className="settings-kicker">AJUSTES DEL EDITOR</span>
-                <h2>Dimensiones y apariencia</h2>
+                <h2>{isTextArt ? 'Apariencia del arte ASCII' : 'Dimensiones y apariencia'}</h2>
               </div>
-              <span className="width-value">{width} × {height}</span>
+              {!isTextArt && <span className="width-value">{width} × {height}</span>}
             </div>
 
-            <div className="editor-settings-grid">
-              <div className="editor-left-controls">
+            <div className={`editor-settings-grid ${isTextArt ? 'editor-settings-grid-text' : ''}`}>
+              {!isTextArt && (
+                <div className="editor-left-controls">
                 <div className="settings-section">
                   <h3 className="settings-section-title">Dimensiones de salida</h3>
 
@@ -1565,7 +1883,8 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
                     </label>
                   </div>
                 </div>
-              </div>
+                </div>
+              )}
 
               <div className="settings-section editor-color-column">
                 <h3 className="settings-section-title">Rueda de color</h3>
@@ -1655,6 +1974,25 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
                   </span>
                 </label>
 
+                {isTextArt && (
+                  <label className="control-card text-art-size-control" htmlFor="ascii-font-size">
+                    <span className="control-label">
+                      Tamaño del arte <strong>{asciiFontSize}px</strong>
+                    </span>
+                    <input
+                      className="range-control"
+                      id="ascii-font-size"
+                      type="range"
+                      min="4"
+                      max="24"
+                      step="1"
+                      value={asciiFontSize}
+                      onChange={(event) => setAsciiFontSize(Number(event.target.value))}
+                    />
+                    <span className="slider-ends"><span>4px</span><span>24px</span></span>
+                  </label>
+                )}
+
                 <p className="field-hint">
                   Selecciona un círculo y utiliza la rueda para editar ese color
                   sin modificar el otro.
@@ -1663,13 +2001,15 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
             </div>
 
             <div className="settings-actions">
-              <button
-                className="secondary-button"
-                onClick={() => convertImage()}
-                disabled={loading || (charset === 'custom' && !customCharset.length)}
-              >
-                {loading ? 'Convirtiendo…' : 'Convertir ASCII'}
-              </button>
+              {!isTextArt && (
+                <button
+                  className="secondary-button"
+                  onClick={() => convertImage()}
+                  disabled={loading || (charset === 'custom' && !customCharset.length)}
+                >
+                  {loading ? 'Convirtiendo…' : 'Convertir ASCII'}
+                </button>
+              )}
               <div className="export-action-group">
                 <button
                   type="button"
@@ -1742,7 +2082,7 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
                   <button
                     type="button"
                     className="export-format-option"
-                    onClick={() => exportAscii('txt')}
+                    onClick={() => void exportAscii('txt')}
                   >
                     <span className="export-format-extension">TXT</span>
                     <span className="export-format-name">Texto plano</span>
@@ -1754,7 +2094,7 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
                   <button
                     type="button"
                     className="export-format-option"
-                    onClick={() => exportAscii('json')}
+                    onClick={() => void exportAscii('json')}
                   >
                     <span className="export-format-extension">JSON</span>
                     <span className="export-format-name">Datos y ajustes</span>
@@ -1783,7 +2123,7 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
                   <button
                     type="button"
                     className="export-format-option"
-                    onClick={() => exportAscii('html')}
+                    onClick={() => void exportAscii('html')}
                   >
                     <span className="export-format-extension">HTML</span>
                     <span className="export-format-name">Vista coloreada</span>
@@ -1795,7 +2135,7 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
                   <button
                     type="button"
                     className="export-format-option"
-                    onClick={() => exportAscii('ansi')}
+                    onClick={() => void exportAscii('ansi')}
                   >
                     <span className="export-format-extension">ANSI</span>
                     <span className="export-format-name">Terminal</span>
@@ -1831,22 +2171,21 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
             <div className="eyebrow"><span /> IMPORTAR</div>
             <h1>Tus proyectos<span className="accent">.</span></h1>
             <p>
-              Recupera un proyecto editable o un GIF exportado por ASCII Motion.
+              Importa proyectos de ASCII Motion, GIF compatibles o cualquier archivo TXT con arte ASCII.
             </p>
           </div>
           <div className="import-placeholder">
             <span className="upload-icon">▱</span>
             <strong>Importar proyecto ASCII Motion</strong>
             <p>
-              Selecciona un archivo .asciimotion.json para restaurar el proyecto,
-              o un GIF exportado por ASCII Motion para recuperar sus metadatos.
+              Selecciona un .asciimotion.json, un GIF exportado por ASCII Motion o un .txt externo. El texto se abre en el editor y conserva su indentación.
             </p>
 
             <input
               ref={projectInputRef}
               className="visually-hidden"
               type="file"
-              accept=".asciimotion.json,.json,.gif,application/json,image/gif"
+              accept=".asciimotion.json,.json,.gif,.txt,application/json,image/gif,text/plain"
               onChange={(event) => {
                 const selectedProject = event.target.files?.[0];
                 if (selectedProject) void importProjectOrGif(selectedProject);
@@ -1862,7 +2201,7 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
                 projectInputRef.current?.click();
               }}
             >
-              Seleccionar proyecto →
+              Seleccionar archivo →
             </button>
 
             {notice && <p className="notice" role="status">{notice}</p>}

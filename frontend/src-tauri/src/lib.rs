@@ -1,6 +1,8 @@
 use std::{
+    fs,
     io,
     net::{SocketAddr, TcpListener, TcpStream},
+    path::Path,
     process::{Child, Command, Stdio},
     sync::Mutex,
     thread,
@@ -70,9 +72,97 @@ fn terminate_backend(child: &mut Child) {
     let _ = child.wait();
 }
 
+#[tauri::command]
+async fn save_export_file(
+    app: tauri::AppHandle,
+    suggested_name: String,
+    extension: String,
+    content_base64: String,
+    companion_base64: Option<String>,
+    companion_suffix: Option<String>,
+) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        use tauri_plugin_dialog::DialogExt;
+
+        let extension = extension.trim().trim_start_matches('.').to_lowercase();
+        let dialog = app.dialog().file().set_file_name(suggested_name);
+        let dialog = if extension.is_empty() {
+            dialog
+        } else {
+            dialog.add_filter("Archivo exportado", &[extension.as_str()])
+        };
+
+        let Some(selected_path) = dialog.blocking_save_file() else {
+            return Ok(None);
+        };
+
+        let mut path = selected_path
+            .into_path()
+            .map_err(|error| format!("No se pudo resolver la ruta elegida: {error}"))?;
+        if !extension.is_empty()
+            && !path
+                .extension()
+                .and_then(|part| part.to_str())
+                .is_some_and(|part| part.eq_ignore_ascii_case(&extension))
+        {
+            path.set_extension(&extension);
+        }
+        let bytes = STANDARD
+            .decode(content_base64.as_bytes())
+            .map_err(|error| format!("El contenido para exportar no es válido: {error}"))?;
+
+        fs::write(&path, bytes)
+            .map_err(|error| format!("No se pudo guardar '{}': {error}", path.display()))?;
+
+        match (companion_base64, companion_suffix) {
+            (Some(encoded), Some(suffix)) => {
+                if !suffix.starts_with('.')
+                    || !suffix.chars().all(|character| {
+                        character.is_ascii_alphanumeric()
+                            || character == '.'
+                            || character == '_'
+                            || character == '-'
+                    })
+                {
+                    return Err("La extensión del proyecto complementario no es válida.".to_string());
+                }
+                let stem = path
+                    .file_stem()
+                    .and_then(|part| part.to_str())
+                    .ok_or_else(|| "No se pudo obtener el nombre del archivo exportado.".to_string())?;
+                let companion_path = path
+                    .parent()
+                    .unwrap_or_else(|| Path::new("."))
+                    .join(format!("{stem}{suffix}"));
+                let companion_bytes = STANDARD
+                    .decode(encoded.as_bytes())
+                    .map_err(|error| format!("El proyecto complementario no es válido: {error}"))?;
+                fs::write(&companion_path, companion_bytes).map_err(|error| {
+                    format!(
+                        "El archivo principal se guardó, pero no se pudo guardar el proyecto complementario '{}': {error}",
+                        companion_path.display()
+                    )
+                })?;
+            }
+            (None, None) => {}
+            _ => {
+                return Err(
+                    "La exportación complementaria requiere contenido y extensión.".to_string(),
+                );
+            }
+        }
+
+        Ok(Some(path.display().to_string()))
+    })
+    .await
+    .map_err(|error| format!("Falló el proceso de guardado: {error}"))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -175,7 +265,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![backend_base_url])
+        .invoke_handler(tauri::generate_handler![backend_base_url, save_export_file])
         .build(tauri::generate_context!())
         .expect("Error al construir ASCII Motion");
 

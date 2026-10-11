@@ -1849,3 +1849,144 @@ h1 > span:not(.accent) { color: var(--purple); }
     grid-template-columns: minmax(0, 1fr) 42px;
   }
 }
+
+/* Edición directa de arte ASCII importado desde texto plano. */
+.text-source-note {
+  width: min(100%, 340px);
+  padding: 20px;
+  border: 1px solid #393246;
+  border-radius: 12px;
+  background: rgba(18, 16, 25, 0.94);
+  color: #e2d8fa;
+  text-align: center;
+}
+
+.text-source-note strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #d2baff;
+}
+
+.text-source-note p {
+  margin: 0;
+  color: #aaa2bb;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.ascii-edit-panel {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #111117;
+}
+
+.ascii-edit-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: #e8e0f8;
+  font-size: 12px;
+}
+
+.ascii-edit-heading span {
+  color: #9289a5;
+  font-size: 10px;
+}
+
+.ascii-edit-textarea {
+  display: block;
+  width: 100%;
+  min-height: 280px;
+  padding: 14px;
+  resize: vertical;
+  border: 1px solid #393246;
+  border-radius: 8px;
+  outline: none;
+  background: #08080c;
+  color: var(--ascii-edit-color, #d0baff);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.2;
+  tab-size: 4;
+  white-space: pre;
+  overflow: auto;
+}
+
+.ascii-edit-textarea:focus-visible {
+  border-color: var(--purple);
+  box-shadow: 0 0 0 2px rgba(187, 151, 255, 0.14);
+}
+
+.ascii-edit-panel > p {
+  margin: 10px 0 0;
+  color: #9289a5;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+/* Previsualización de texto externo y comparación de proyectos ASCII. */
+.preview-grid.preview-grid-text-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+.preview-grid.preview-grid-text-single .ascii-preview-column-single {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+.source-ascii-placeholder {
+  background-color: #0c0c11 !important;
+  background-image: none;
+}
+.source-ascii-placeholder .ascii-result {
+  color: #d0baff !important;
+  background-color: #0c0c11 !important;
+}
+.editor-settings-grid-text {
+  grid-template-columns: minmax(0, 1fr);
+}
+.editor-settings-grid-text .editor-color-column {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: 100%;
+}
+.text-art-size-control {
+  margin-top: 16px;
+}
+
+
+
+/* Proyecto de texto ASCII: dos vistas y editor en una fila independiente. */
+.preview-grid.preview-grid-text-project {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.preview-grid.preview-grid-text-project .ascii-preview-column {
+  display: contents;
+}
+
+.preview-grid.preview-grid-text-project .ascii-preview-panel {
+  grid-column: auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.preview-grid.preview-grid-text-project .ascii-edit-panel {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+@media (max-width: 800px) {
+  .preview-grid.preview-grid-text-project {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .preview-grid.preview-grid-text-project .ascii-edit-panel {
+    grid-column: 1;
+  }
+}
