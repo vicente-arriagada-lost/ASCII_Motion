@@ -136,3 +136,21 @@ def test_numeric_settings_accept_valid_boundary_values(field, value):
     settings = ConversionSettings(**{field: value})
 
     assert getattr(settings, field) == value
+
+
+def test_settings_accept_explicit_height():
+    settings = ConversionSettings(width=80, height=25)
+
+    assert settings.height == 25
+
+
+def test_settings_default_height_is_automatic():
+    settings = ConversionSettings()
+
+    assert settings.height is None
+
+
+@pytest.mark.parametrize("height", [0, -1, 1.5, True])
+def test_settings_reject_invalid_height(height):
+    with pytest.raises(ValueError, match="Height must be greater than zero"):
+        ConversionSettings(height=height)

@@ -52,6 +52,7 @@ def convert_to_ascii(
         grayscale,
         width=settings.width,
         character_aspect_ratio=settings.character_aspect_ratio,
+        height=settings.height,
     )
     height = resized.height
 

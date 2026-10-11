@@ -57,3 +57,19 @@ def test_resize_image_rejects_invalid_width(width):
 
     with pytest.raises(ValueError, match="Width must be greater than zero"):
         resize_image(image, width=width)
+
+
+def test_resize_uses_explicit_height():
+    image = Image.new("RGB", (40, 20))
+
+    result = resize_image(image, width=20, height=7)
+
+    assert result.size == (20, 7)
+
+
+@pytest.mark.parametrize("height", [0, -1, 1.5, True])
+def test_resize_rejects_invalid_height(height):
+    image = Image.new("RGB", (20, 10))
+
+    with pytest.raises(ValueError, match="Height must be greater than zero"):
+        resize_image(image, height=height)
