@@ -7,6 +7,7 @@ class ConversionSettings:
     """Configuration shared by image and animation conversions."""
 
     width: int = 80
+    height: int | None = None
     charset: str = "standard"
     contrast: float = 1.0
     brightness: float = 1.0
@@ -22,6 +23,13 @@ class ConversionSettings:
             or self.width < 1
         ):
             raise ValueError("Width must be greater than zero")
+
+        if self.height is not None and (
+            not isinstance(self.height, int)
+            or isinstance(self.height, bool)
+            or self.height < 1
+        ):
+            raise ValueError("Height must be greater than zero")
 
         if not isinstance(self.charset, str) or not self.charset:
             raise ValueError("Charset cannot be empty")
