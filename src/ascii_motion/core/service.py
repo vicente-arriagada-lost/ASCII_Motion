@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from ascii_motion.core.animation import load_animation
-from ascii_motion.core.converter import convert_to_ascii
+from ascii_motion.core.converter import convert_to_ascii, convert_to_ascii_with_colors
 from ascii_motion.core.image_loader import load_image
 from ascii_motion.models.frame import Frame
 from ascii_motion.models.settings import ConversionSettings
@@ -24,6 +24,8 @@ def convert_gif_file(
     input_path: str | Path,
     settings: ConversionSettings | None = None,
     max_frames: int = 500,
+    *,
+    include_colors: bool = False,
 ) -> list[Frame]:
     """Load a GIF file and convert its frames to ASCII art."""
     if settings is None:
@@ -33,4 +35,18 @@ def convert_gif_file(
         input_path,
         settings=settings,
         max_frames=max_frames,
+        include_colors=include_colors,
     )
+
+
+
+def convert_image_file_with_colors(
+    input_path: str | Path,
+    settings: ConversionSettings | None = None,
+) -> tuple[str, str]:
+    """Return ASCII art plus per-character colors for an image."""
+    if settings is None:
+        settings = ConversionSettings()
+
+    image = load_image(input_path)
+    return convert_to_ascii_with_colors(image, settings=settings)

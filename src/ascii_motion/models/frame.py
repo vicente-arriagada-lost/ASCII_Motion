@@ -7,6 +7,7 @@ class Frame:
 
     content: str
     duration_ms: int
+    colors: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.content, str):
@@ -20,3 +21,6 @@ class Frame:
 
         if self.duration_ms < 0:
             raise ValueError("Frame duration cannot be negative")
+
+        if self.colors is not None and not isinstance(self.colors, str):
+            raise TypeError("Frame colors must be a string or None")

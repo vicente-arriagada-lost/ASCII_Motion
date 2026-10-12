@@ -84,3 +84,21 @@ def test_custom_charset_still_works():
     result = convert_to_ascii(image, width=2, charset="X ")
 
     assert result == "X "
+
+
+
+def test_color_map_matches_ascii_character_count():
+    from ascii_motion.core.converter import convert_to_ascii_with_colors
+    from ascii_motion.models.settings import ConversionSettings
+
+    image = Image.new("RGB", (2, 1))
+    image.putpixel((0, 0), (255, 0, 0))
+    image.putpixel((1, 0), (0, 0, 255))
+
+    art, colors = convert_to_ascii_with_colors(
+        image, settings=ConversionSettings(width=2, height=1, charset="@ ")
+    )
+
+    assert len(colors) == len(art.replace("\n", "")) * 6
+    assert colors[:6] == "ff0000"
+    assert colors[6:12] == "0000ff"

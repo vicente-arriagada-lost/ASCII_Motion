@@ -90,3 +90,18 @@ def test_load_animation_rejects_invalid_pixel_limit(tmp_path):
 
     with pytest.raises(ValueError, match="positive integer"):
         load_animation(path, max_pixels=True)
+
+
+
+def test_load_animation_includes_colors_when_requested(tmp_path):
+    path = tmp_path / "colored.gif"
+    first = Image.new("RGB", (20, 10), (255, 0, 0))
+    second = Image.new("RGB", (20, 10), (0, 0, 255))
+    first.save(path, format="GIF", save_all=True, append_images=[second], duration=[100, 150])
+
+    frames = load_animation(path, width=10, include_colors=True)
+
+    assert len(frames) == 2
+    assert all(frame.colors is not None for frame in frames)
+    assert all(len(frame.colors) == len(frame.content.replace("\n", "")) * 6 for frame in frames)
+    assert frames[0].colors != frames[1].colors

@@ -89,3 +89,28 @@ def convert_to_ascii(
         rows.append(row)
 
     return "\n".join(rows)
+
+
+
+def convert_to_ascii_with_colors(
+    image: Image.Image,
+    *,
+    settings: ConversionSettings | None = None,
+) -> tuple[str, str]:
+    """Return ASCII art and a compact RGB color map (six hex digits per glyph)."""
+    if settings is None:
+        settings = ConversionSettings()
+
+    ascii_art = convert_to_ascii(image, settings=settings)
+    target_height = len(ascii_art.split("\n"))
+    color_image = resize_image(
+        image.convert("RGB"),
+        width=settings.width,
+        character_aspect_ratio=settings.character_aspect_ratio,
+        height=target_height,
+    )
+    color_map = "".join(
+        f"{red:02x}{green:02x}{blue:02x}"
+        for red, green, blue in color_image.get_flattened_data()
+    )
+    return ascii_art, color_map

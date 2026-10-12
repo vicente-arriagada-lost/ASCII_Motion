@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from ascii_motion.core.service import (
     convert_gif_file,
-    convert_image_file,
+    convert_image_file_with_colors,
 )
 from ascii_motion.models.settings import ConversionSettings
 
@@ -94,7 +94,9 @@ async def convert_image(
         with NamedTemporaryFile(suffix=suffix) as temporary_file:
             temporary_file.write(content)
             temporary_file.flush()
-            ascii_content = convert_image_file(temporary_file.name, settings)
+            ascii_content, color_map = convert_image_file_with_colors(
+                temporary_file.name, settings
+            )
 
     except HTTPException:
         raise
@@ -110,6 +112,7 @@ async def convert_image(
 
     return {
         "content": ascii_content,
+        "colors": color_map,
         "width": width,
         "height": len(ascii_content.splitlines()),
         "charset": charset,
@@ -221,7 +224,18 @@ async def export_ascii_gif(
 
         # GIF almacena las duraciones en centésimas de segundo.
         duration = max(20, min(60000, round(duration / 10) * 10))
-        validated_frames.append((content, int(duration), lines, columns))
+        colors = frame.get("colors")
+        if colors is not None and (
+            not isinstance(colors, str)
+            or len(colors) != sum(len(line) for line in lines) * 6
+            or re.fullmatch(r"[0-9a-fA-F]*", colors) is None
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Un fotograma contiene un mapa de colores no válido.",
+            )
+
+        validated_frames.append((content, int(duration), lines, columns, colors))
 
     font_candidates = (
         "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
@@ -279,18 +293,43 @@ async def export_ascii_gif(
     rendered_frames = []
     durations = []
 
-    for content, duration, _, _ in validated_frames:
+    preserve_image_colors = bool(
+        project.get("settings", {}).get("preserveImageColors", True)
+        if isinstance(project.get("settings"), dict)
+        else True
+    )
+
+    for content, duration, lines, _, colors in validated_frames:
         image = Image.new(
             "RGB", (pixel_width, pixel_height), background_rgb
         )
         drawing = ImageDraw.Draw(image)
-        drawing.multiline_text(
-            (padding, padding),
-            content,
-            fill=text_rgb,
-            font=font,
-            spacing=max(1, font_size // 6),
-        )
+        if preserve_image_colors and colors:
+            color_offset = 0
+            for row_index, line in enumerate(lines):
+                y = padding + row_index * line_height
+                for column_index, character in enumerate(line):
+                    color_hex = colors[color_offset:color_offset + 6]
+                    color_offset += 6
+                    char_rgb = tuple(
+                        int(color_hex[index:index + 2], 16)
+                        for index in (0, 2, 4)
+                    )
+                    if character != " ":
+                        drawing.text(
+                            (padding + column_index * cell_width, y),
+                            character,
+                            fill=char_rgb,
+                            font=font,
+                        )
+        else:
+            drawing.multiline_text(
+                (padding, padding),
+                content,
+                fill=text_rgb,
+                font=font,
+                spacing=max(1, font_size // 6),
+            )
         rendered_frames.append(
             image.convert("P", palette=palette_mode, colors=256)
         )
@@ -449,6 +488,7 @@ async def convert_gif(
                 temporary_file.name,
                 settings=settings,
                 max_frames=max_frames,
+                include_colors=True,
             )
 
         total_characters = sum(len(frame.content) for frame in frames)
@@ -479,6 +519,7 @@ async def convert_gif(
             {
                 "content": frame.content,
                 "duration_ms": frame.duration_ms,
+                "colors": frame.colors,
             }
             for frame in frames
         ],

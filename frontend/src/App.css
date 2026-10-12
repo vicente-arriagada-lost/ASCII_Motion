@@ -1990,3 +1990,22 @@ h1 > span:not(.accent) { color: var(--purple); }
     grid-column: 1;
   }
 }
+
+
+.preserve-image-colors-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.preserve-image-colors-control input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #b7a1ff;
+  flex: 0 0 auto;
+}
+
+.preserve-image-colors-control .field-hint {
+  flex-basis: 100%;
+}

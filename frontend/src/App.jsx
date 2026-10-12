@@ -24,6 +24,88 @@ function rgbToHex({ r, g, b }) {
   return `#${channel(r)}${channel(g)}${channel(b)}`;
 }
 
+function hasValidCharacterColors(content, colorMap) {
+  if (typeof content !== 'string' || typeof colorMap !== 'string') return false;
+  const glyphCount = Array.from(content).filter((character) => character !== '\n').length;
+  return colorMap.length === glyphCount * 6 && /^[0-9a-f]*$/i.test(colorMap);
+}
+
+function renderColorizedAscii(content, colorMap) {
+  if (!hasValidCharacterColors(content, colorMap)) return content;
+
+  let colorIndex = 0;
+  const lines = content.split('\n');
+
+  return lines.map((line, lineIndex) => {
+    const glyphs = Array.from(line).map((character, characterIndex) => {
+      const color = colorMap.slice(colorIndex * 6, colorIndex * 6 + 6);
+      colorIndex += 1;
+      return (
+        <span key={`${lineIndex}-${characterIndex}`} style={{ color: `#${color}` }}>
+          {character}
+        </span>
+      );
+    });
+
+    return (
+      <span key={`line-${lineIndex}`}>
+        {glyphs}
+        {lineIndex < lines.length - 1 ? '\n' : null}
+      </span>
+    );
+  });
+}
+
+function escapeHtmlCharacter(character) {
+  return character
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderColorizedHtml(content, colorMap) {
+  if (!hasValidCharacterColors(content, colorMap)) {
+    return Array.from(content, escapeHtmlCharacter).join('');
+  }
+
+  let colorIndex = 0;
+  return Array.from(content).map((character) => {
+    if (character === '\n') return '\n';
+    const color = colorMap.slice(colorIndex * 6, colorIndex * 6 + 6);
+    colorIndex += 1;
+    return `<span style="color:#${color}">${escapeHtmlCharacter(character)}</span>`;
+  }).join('');
+}
+
+function renderColorizedAnsi(content, colorMap, fallbackColor, backgroundColor) {
+  const escape = '\u001b';
+  const { r: backgroundR, g: backgroundG, b: backgroundB } = hexToRgb(backgroundColor);
+  let result = `${escape}[48;2;${backgroundR};${backgroundG};${backgroundB}m`;
+
+  if (!hasValidCharacterColors(content, colorMap)) {
+    const { r, g, b } = hexToRgb(fallbackColor);
+    return `${result}${escape}[38;2;${r};${g};${b}m${content}${escape}[0m`;
+  }
+
+  let colorIndex = 0;
+  for (const character of content) {
+    if (character === '\n') {
+      result += character;
+      continue;
+    }
+    const hex = colorMap.slice(colorIndex * 6, colorIndex * 6 + 6);
+    colorIndex += 1;
+    const red = Number.parseInt(hex.slice(0, 2), 16);
+    const green = Number.parseInt(hex.slice(2, 4), 16);
+    const blue = Number.parseInt(hex.slice(4, 6), 16);
+    result += `${escape}[38;2;${red};${green};${blue}m${character}`;
+  }
+
+  return `${result}${escape}[0m`;
+}
+
 function hexToHsv(hex) {
   const { r, g, b } = hexToRgb(hex);
   const red = r / 255;
@@ -95,6 +177,8 @@ function App() {
   const [backgroundColor, setBackgroundColor] = useState('#0c0c11');
   const [activeWheelTarget, setActiveWheelTarget] = useState('text');
   const [ascii, setAscii] = useState('');
+  const [asciiColors, setAsciiColors] = useState('');
+  const [preserveImageColors, setPreserveImageColors] = useState(true);
   const [sourceAscii, setSourceAscii] = useState('');
   const [isTextProject, setIsTextProject] = useState(false);
   const [animationFrames, setAnimationFrames] = useState([]);
@@ -114,6 +198,12 @@ function App() {
   const displayedAscii = isGifFile
     ? (currentAnimationFrame?.content ?? '')
     : ascii;
+  const displayedColors = isGifFile
+    ? (currentAnimationFrame?.colors ?? '')
+    : asciiColors;
+  const activeCharacterColors = preserveImageColors && hasValidCharacterColors(displayedAscii, displayedColors)
+    ? displayedColors
+    : '';
 
   const activeWheelColor =
     activeWheelTarget === 'text' ? asciiColor : backgroundColor;
@@ -177,6 +267,8 @@ function App() {
     setCurrentFrameIndex(0);
     setIsPlaying(false);
     setAscii('');
+    setAsciiColors('');
+    setPreserveImageColors(true);
     setSourceAscii('');
     setIsTextProject(false);
     setNotice('');
@@ -223,8 +315,10 @@ function App() {
     updatePreview(selectedFile);
     setFile(selectedFile);
     setSourceAscii('');
-    setIsTextProject(false);
+    setAsciiColors('');
+    setPreserveImageColors(true);
     setAnimationFrames([]);
+    setIsTextProject(false);
     setCurrentFrameIndex(0);
     setIsPlaying(false);
     setAscii('');
@@ -305,11 +399,13 @@ function App() {
         setCurrentFrameIndex(0);
         setIsPlaying(result.frames.length > 1);
         setAscii(result.frames[0].content);
+        setAsciiColors('');
       } else {
         setAnimationFrames([]);
         setCurrentFrameIndex(0);
         setIsPlaying(false);
         setAscii(result.content);
+        setAsciiColors(typeof result.colors === 'string' ? result.colors : '');
       }
     } catch (error) {
       if (error.name !== 'AbortError' && requestId === requestIdRef.current) {
@@ -331,6 +427,18 @@ function App() {
   useEffect(() => {
     convertImageRef.current = convertImage;
   });
+
+  // Convierte automáticamente cada imagen/GIF recién seleccionado.
+  // Los proyectos ya importados conservan su resultado y no se recalculan aquí.
+  useEffect(() => {
+    if (!file || /\.txt$/i.test(file.name) || hasConvertedRef.current) return undefined;
+
+    const timer = window.setTimeout(() => {
+      convertImageRef.current?.();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [file]);
 
   // Los cambios de ajustes vuelven a convertir el archivo seleccionado.
   useEffect(() => {
@@ -570,6 +678,7 @@ function App() {
           exportedAt: new Date().toISOString(),
           sourceFile: file?.name ?? null,
           sourceAscii: isTextArt ? sourceAscii : undefined,
+          colors: activeCharacterColors || undefined,
           settings: {
             width,
             height,
@@ -581,6 +690,7 @@ function App() {
             textColor: asciiColor,
             backgroundColor,
             asciiFontSize,
+            preserveImageColors,
           },
           content,
           animation: isGifFile
@@ -593,12 +703,6 @@ function App() {
       } else if (format === 'html') {
         filename = `${baseName}.html`;
         mimeType = 'text/html;charset=utf-8';
-
-        const escapeHtml = (text) =>
-          text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
 
         const title = (file?.name || 'ASCII Motion')
           .replace(/&/g, '&amp;')
@@ -617,18 +721,18 @@ body{margin:0;min-height:100vh;padding:24px;display:grid;place-items:center;back
 pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-space:pre;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:${Math.max(0.5, Math.min(14, asciiFontSize))}px;line-height:1.1;text-align:center}
 </style>
 </head>
-<body><pre>${escapeHtml(content)}</pre></body>
+<body><pre>${renderColorizedHtml(content, activeCharacterColors)}</pre></body>
 </html>`;
       } else if (format === 'ansi') {
         filename = `${baseName}.ansi`;
         mimeType = 'text/plain;charset=utf-8';
 
-        const escape = '\u001b';
-        payload =
-          `${escape}[38;2;${foreground.r};${foreground.g};${foreground.b}m` +
-          `${escape}[48;2;${background.r};${background.g};${background.b}m` +
-          content +
-          `${escape}[0m`;
+        payload = renderColorizedAnsi(
+          content,
+          activeCharacterColors,
+          asciiColor,
+          backgroundColor,
+        );
       } else {
         throw new Error('Formato de exportación no reconocido.');
       }
@@ -689,9 +793,11 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
           asciiColor,
           backgroundColor,
           asciiFontSize,
+          preserveImageColors,
         },
         output: {
           ascii,
+          colors: asciiColors,
           frames: [],
           currentFrameIndex: 0,
         },
@@ -719,9 +825,11 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
         brightness,
         asciiColor,
         backgroundColor,
+        preserveImageColors,
       },
       output: {
         ascii,
+        colors: asciiColors,
         frames: animationFrames,
         currentFrameIndex,
       },
@@ -877,6 +985,8 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
     setCurrentFrameIndex(0);
     setIsPlaying(false);
     setAscii(preservedContent);
+    setAsciiColors(typeof projectOptions.colors === 'string' ? projectOptions.colors : '');
+    setPreserveImageColors(projectOptions.preserveImageColors === true);
     setWidth(Math.round(boundedNumber(settings.width, 80, 10, 300)));
     setHeight(Math.round(boundedNumber(settings.height, 40, 1, 300)));
     heightTouchedRef.current = true;
@@ -934,6 +1044,8 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
             sourceAscii: typeof project.sourceAscii === 'string'
               ? project.sourceAscii
               : project.output.ascii,
+            colors: project.output.colors,
+            preserveImageColors: project.settings?.preserveImageColors === true,
             isProject: true,
           },
         );
@@ -962,6 +1074,8 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
             sourceAscii: typeof project.sourceAscii === 'string'
               ? project.sourceAscii
               : project.content,
+            colors: project.colors,
+            preserveImageColors: project.settings?.preserveImageColors === true,
             isProject: true,
           },
         );
@@ -1058,6 +1172,7 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
             .map((frame) => ({
               content: frame.content,
               duration_ms: Math.trunc(Number(frame.duration_ms)),
+              colors: typeof frame.colors === 'string' ? frame.colors : undefined,
             }))
         : [];
 
@@ -1080,6 +1195,8 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
       setFile(restoredFile);
       setSourceAscii('');
       setIsTextProject(false);
+      setAsciiColors(typeof output.colors === 'string' ? output.colors : '');
+      setPreserveImageColors(settings.preserveImageColors !== false);
 
       setWidth(Math.round(boundedNumber(settings.width, 80, 10, 300)));
       setHeight(Math.round(boundedNumber(settings.height, 40, 1, 300)));
@@ -1626,7 +1743,9 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
                 >
                   {displayedAscii ? (
                     <pre className="ascii-result" style={{ color: asciiColor, backgroundColor, fontSize: `${asciiFontSize}px`, lineHeight: 1.1 }}
-                    >{displayedAscii}</pre>
+                    >{activeCharacterColors
+                      ? renderColorizedAscii(displayedAscii, activeCharacterColors)
+                      : displayedAscii}</pre>
                   ) : (
                     <div className="empty-result">
                       <span className="action-icon">▦</span>
@@ -1888,6 +2007,23 @@ pre{max-width:100%;max-height:calc(100vh - 48px);margin:0;overflow:auto;white-sp
 
               <div className="settings-section editor-color-column">
                 <h3 className="settings-section-title">Rueda de color</h3>
+
+                {!isTextArt && Boolean(displayedColors) && (
+                  <label className="control-card preserve-image-colors-control">
+                    <span className="control-label">
+                      Conservar colores originales
+                      <strong>{preserveImageColors ? 'Activado' : 'Desactivado'}</strong>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={preserveImageColors}
+                      onChange={(event) => setPreserveImageColors(event.target.checked)}
+                    />
+                    <span className="field-hint">
+                      Usa los colores de cada zona de la imagen o elige un color uniforme con la rueda.
+                    </span>
+                  </label>
+                )}
 
                 <div className="color-wheel-layout">
                   <div

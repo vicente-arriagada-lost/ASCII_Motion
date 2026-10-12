@@ -2,7 +2,11 @@ from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
 
-from ascii_motion.core.converter import DEFAULT_CHARSET, convert_to_ascii
+from ascii_motion.core.converter import (
+    DEFAULT_CHARSET,
+    convert_to_ascii,
+    convert_to_ascii_with_colors,
+)
 from ascii_motion.exceptions import AnimationLoadError
 from ascii_motion.models.frame import Frame
 from ascii_motion.models.settings import ConversionSettings
@@ -23,6 +27,7 @@ def load_animation(
     max_frames: int = 500,
     *,
     settings: ConversionSettings | None = None,
+    include_colors: bool = False,
     max_pixels: int = DEFAULT_MAX_PIXELS,
 ) -> list[Frame]:
     """Load a GIF and convert its frames to ASCII."""
@@ -60,6 +65,9 @@ def load_animation(
             normalize_contrast=normalize_contrast,
         )
 
+    if not isinstance(include_colors, bool):
+        raise ValueError("include_colors must be a boolean")
+
     frames: list[Frame] = []
 
     try:
@@ -85,10 +93,13 @@ def load_animation(
                     )
 
                 frame_image = image.convert("RGB")
-                ascii_art = convert_to_ascii(
-                    frame_image,
-                    settings=settings,
-                )
+                if include_colors:
+                    ascii_art, color_map = convert_to_ascii_with_colors(
+                        frame_image, settings=settings
+                    )
+                else:
+                    ascii_art = convert_to_ascii(frame_image, settings=settings)
+                    color_map = None
 
                 duration_ms = image.info.get("duration", 100)
 
@@ -99,6 +110,7 @@ def load_animation(
                     Frame(
                         content=ascii_art,
                         duration_ms=max(0, int(duration_ms)),
+                        colors=color_map,
                     )
                 )
 
